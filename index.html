@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script type="text/javascript" src="http://ecn.dev.virtualearth.net/mapcontrol/mapcontrol.ashx?v=7.0"></script>
+<script type="text/javascript" src="ajax.js"></script>
+<script type="text/javascript" src="fulltilt.min.js"></script>
+<script>
+"use strict";
+var map;
+var searchManager;
+var BING_MAP_KEY = "AnrqVpB3YR_8AuBN56J_hipYg5TeUC8PxNQRpNGg3fPBYb6qvXplVqmu3xIuoA3n";
+var theLoc;
+
+function locToMs(loc) {
+	return new Microsoft.Maps.Location(loc.latitude, loc.longitude);
+}
+
+function positionHandler(e) {
+	console.log(e);
+	theLoc = locToMs(e.coords);
+	if (map) map.setView({center: theLoc});
+}
+
+function initOrientation() {
+	/* http://stackoverflow.com/questions/16048514/can-i-use-javascript-to-get-the-compass-heading-for-ios-and-android/26275869#26275869 */
+	// Obtain a new *world-oriented* Full Tilt JS DeviceOrientation Promise
+	var promise = FULLTILT.getDeviceOrientation({ 'type': 'world' });
+
+	// Wait for Promise result
+	promise.then(function(deviceOrientation) { // Device Orientation Events are supported
+
+		// Register a callback to run every time a new 
+		// deviceorientation event is fired by the browser.
+		deviceOrientation.listen(function() {
+
+			// Get the current *screen-adjusted* device orientation angles
+			var currentOrientation = deviceOrientation.getScreenAdjustedEuler();
+
+			// Calculate the current compass heading that the user is 'looking at' (in degrees)
+			var compassHeading = 360 - currentOrientation.alpha;
+
+			// Do something with `compassHeading` here...
+			//console.log(compassHeading);
+
+		});
+
+	}).catch(function(errorMessage) { // Device Orientation Events are not supported
+
+		console.log(errorMessage);
+
+		// Implement some fallback controls here...
+
+	});
+}
+
+function doTrace() {
+	/* Plan:
+	 * Reverse geocode the current location
+	 * increment distance by 50m along compass edge until we hit a location that's: not a street and not the current location
+	 */
+	var origGeo;
+	var curLoc = theLoc;
+	var i = 0;
+	var reverseGeocodeRequest = {
+		location: theLoc,
+		count:1,
+		callback:function(e) {
+			origGeo = e;
+			loadPoiData();
+		},
+		errorCallback:function(e) {console.log("error: ", e)}
+	};
+	searchManager.reverseGeocode(reverseGeocodeRequest);
+	/*function traceOnce() {
+		curLoc.latitude += 0.00001;
+		reverseGeocodeRequest = {
+			location: curLoc,
+			count:1,
+			callback:function(e) {
+				console.log(e);
+				i++;
+				if (i < 50) traceOnce();
+			},
+			errorCallback:function(e) {console.log("error: ", e)}
+		};
+		searchManager.reverseGeocode(reverseGeocodeRequest);
+	};*/
+	function loadPoiData() {
+		var searchRequest = {
+			query: origGeo.name,
+			entityType: "Business",
+			count: 10,
+			callback: function(e) {
+				console.log(e);
+			}
+		};
+		searchManager.search(searchRequest);
+	}
+}
+
+function doTraceOsm() {
+	/* Plan:
+	 * Reverse geocode the current location
+	 * increment distance by 50m along compass edge until we hit a location that's: not a street and not the current location
+	 */
+	var origGeo;
+	var curLoc = theLoc;
+	var i = 0;
+	ajax({
+		url: "http://nominatim.openstreetmap.org/reverse?format=json&lat=" + curLoc.latitude +
+			"&lon=" + curLoc.longitude + "&zoom=18&addressdetails=1",
+		type: "json",
+		}, function(e) {
+			origGeo = e;
+			traceOnce();
+		}, function(e){console.log(e)}
+	);
+
+	function traceOnce() {
+		curLoc.latitude += 0.0001;
+		ajax({
+			url: "http://nominatim.openstreetmap.org/reverse?format=json&lat=" + curLoc.latitude +
+				"&lon=" + curLoc.longitude + "&zoom=18&addressdetails=1",
+			type: "json",
+			}, function(e) {
+				console.log(e);
+				i++;
+				if (i < 10) traceOnce();
+			}, function(e){console.log(e)}
+		);
+	};
+
+}
+
+function loadHandler() {
+	navigator.geolocation.watchPosition(positionHandler);
+	map = new Microsoft.Maps.Map(document.getElementById("mapDiv"), 
+		{credentials: BING_MAP_KEY, center: new Microsoft.Maps.Location(47.5, -122.3), zoom: 9 });
+	Microsoft.Maps.loadModule('Microsoft.Maps.Search', { callback: searchModuleLoaded });
+	initOrientation();
+}
+
+function searchModuleLoaded() {
+
+	searchManager = new Microsoft.Maps.Search.SearchManager(map);
+}
+
+window.onload = loadHandler;
+</script>
+</head>
+<body>
+<div id="mapDiv"></div>
+</body>
+</html>
